@@ -10,8 +10,8 @@ A simple shellcode decoder that uses the unicorn engine as the backend to emulat
 
 	optional arguments:
 	  -h, --help          show this help message and exit
-	  -f FILE             file to shellcode binary file
-	  -m MODE             mode of the emulator (16|32|64)
+	  -a ARCH             architecture for the emulator (ARM|ARM64|X86)
+	  -m MODE             mode of the emulator (16|32|64|THUMB)
 	  -i MAX_INSTRUCTION  max instructions to emulate
 	  -d                  Enable extra hooks for debugging of shellcode
 
@@ -73,7 +73,5 @@ Here is the decoder walking through the shikata_ga_nai test case
 ##Limitation
 
 Multiple rounds of any encoder will require supplying new -i counts, this can cause deadlocks with some encoders.
-
-Only i386 right now, ARM and others will come later.
 
 The encoder has to self modify for the detection to work, this decoder is unable to correctly detect decoded shellcode that is written to a new location in memory. 

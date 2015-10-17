@@ -2,19 +2,34 @@
 import sys
 from unicorn import *
 from unicorn.x86_const import *
+from unicorn.arm_const import *
+from unicorn.arm64_const import *
 from capstone import *
 import argparse
 
 class SimpleEngine:
-	def __init__(self, mode):
-		if mode == '32':
-			cur_mode = CS_MODE_32
-		elif mode == '16':
-			cur_mode = CS_MODE_16
+	def __init__(self, arch, mode):
+		if arch.lower() == 'x86':
+			cur_arch = CS_ARCH_X86
+		elif arch.lower() == 'arm':
+			cur_arch = CS_ARCH_ARM
 		else:
-			cur_mode = CS_MODE_64
+			cur_arch = CS_ARCH_ARM64
 
-		self.capmd = Cs(CS_ARCH_X86, cur_mode)
+		if cur_arch is CS_ARCH_X86:
+			if mode == '32':
+				cur_mode = CS_MODE_32
+			elif mode == '16':
+				cur_mode = CS_MODE_16
+			else:
+				cur_mode = CS_MODE_64
+		else:
+			if mode.lower() == 'thumb':
+				cur_mode = CS_MODE_THUMB
+			else:
+				cur_mode = CS_MODE_ARM
+
+		self.capmd = Cs(cur_arch, cur_mode)
 
 	def disas_single(self, data, addr):
 		for i in self.capmd.disasm(data, addr):
@@ -42,8 +57,28 @@ def hook_intr(uc, intno, user_data):
 	else:
 		return True
 
+def get_eip_reg(uc):
+        eip_reg = UC_X86_REG_EIP
+
+        if uc._arch is UC_ARCH_ARM:
+                eip_reg = UC_ARM_REG_PC
+        elif uc._arch is UC_ARCH_ARM64:
+                eip_reg = UC_ARM64_REG_PC
+
+        return eip_reg
+
+def get_esp_reg(uc):
+        esp_reg = UC_X86_REG_ESP
+
+        if uc._arch is UC_ARCH_ARM:
+                esp_reg = UC_ARM_REG_SP
+        elif uc._arch is UC_ARCH_ARM64:
+                esp_reg = UC_ARM64_REG_SP
+
+        return esp_reg
+
 def hook_mem_invalid(uc, access, address, size, value, user_data):
-	eip = uc.reg_read(UC_X86_REG_EIP)
+	eip = uc.reg_read(get_eip_reg(uc))
 
 	if access == UC_MEM_WRITE:
 		print("invalid WRITE of 0x%x at 0x%X, data size = %u, data value = 0x%x" % (address, eip, size, value))
@@ -54,7 +89,7 @@ def hook_mem_invalid(uc, access, address, size, value, user_data):
 
 def hook_smc_check(uc, access, address, size, value, user_data):
 	SMC_BOUND = 0x200
-	eip = uc.reg_read(UC_X86_REG_EIP)
+	eip = uc.reg_read(get_eip_reg(uc))
 
 	# Just check if the write target addr is near EIP
 	if abs(eip - address) < SMC_BOUND:
@@ -85,27 +120,41 @@ def hook_code(uc, addr, size, user_data):
 def main():
 	parser = argparse.ArgumentParser(description='Decode supplied x86 / x64 shellcode automatically with the unicorn engine')
 	parser.add_argument('-f', dest='file', help='file to shellcode binary file', required=True, type=file)
-	parser.add_argument('-m', dest='mode', help='mode of the emulator (16|32|64)', required=False, default="32")
+	parser.add_argument('-a', dest='arch', help='architecture for the emulator (ARM|ARM64|X86)', required=False, default='X86')
+	parser.add_argument('-m', dest='mode', help='mode of the emulator (16|32|64|THUMB)', required=False, default="32")
 	parser.add_argument('-i', dest='max_instruction', help='max instructions to emulate', required=False)
 	parser.add_argument('-d', dest='debug', help='Enable extra hooks for debugging of shellcode', required=False, default=False, action='store_true')
 
 	args = parser.parse_args()
 
 	bin_code = args.file.read()
-	disas_engine = SimpleEngine(args.mode)
+	disas_engine = SimpleEngine(args.arch, args.mode)
 
-	if args.mode == "32":
-		cur_mode = UC_MODE_32
-	elif args.mode == "16":
-		cur_mode = UC_MODE_16
+	if args.arch.lower() == 'x86':
+		cur_arch = UC_ARCH_X86
+	elif args.arch.lower() == 'arm':
+		cur_arch = UC_ARCH_ARM
 	else:
-		cur_mode = UC_MODE_64
+		cur_arch = UC_ARCH_ARM64
+
+	if cur_arch is UC_ARCH_X86:
+		if args.mode == '32':
+			cur_mode = UC_MODE_32
+		elif args.mode == '16':
+			cur_mode = UC_MODE_16
+		else:
+			cur_mode = UC_MODE_64
+	else:
+		if args.mode.lower() == 'thumb':
+			cur_mode = UC_MODE_THUMB
+		else:
+			cur_mode = UC_MODE_ARM
 
 	PAGE_SIZE = 2 * 1024 * 1024
 	START_RIP = 0x0
 
 	# setup engine and write the memory there.
-	emu = Uc(UC_ARCH_X86, cur_mode)
+	emu = Uc(cur_arch, cur_mode)
 	emu.disasm = disas_engine # python is silly but it works.
 	emu.mem_map(0, PAGE_SIZE)
 	# write machine code to be emulated to memory
@@ -123,7 +172,7 @@ def main():
 		emu.hook_add(UC_HOOK_CODE, hook_code)
 
 	# arbitrary address for ESP.
-	emu.reg_write(UC_X86_REG_ESP, 0x2000)
+	emu.reg_write(get_esp_reg(emu), 0x2000)
 
 	if args.max_instruction:
 		end_addr = -1
