@@ -11,7 +11,7 @@ A simple shellcode decoder that uses the unicorn engine as the backend to emulat
 	optional arguments:
 	  -h, --help          show this help message and exit
 	  -f FILE             file to shellcode binary file
-	  -m MODE             mode of the emulator (32|64)
+	  -m MODE             mode of the emulator (16|32|64)
 	  -i MAX_INSTRUCTION  max instructions to emulate
 	  -d                  Enable extra hooks for debugging of shellcode
 
